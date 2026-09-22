@@ -1,0 +1,11 @@
+{
+  "name": "fintrack-tests",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "@playwright/test": "latest"
+  },
+  "scripts": {
+    "e2e": "playwright test --config playwright.config.ts"
+  }
+}

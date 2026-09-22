@@ -1,0 +1,110 @@
+services:
+  mysql:
+    build:
+      context: .
+      dockerfile: database/Dockerfile
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-expense_tracker}
+      MYSQL_USER: ${MYSQL_APP_USER:?Set MYSQL_APP_USER in .env}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?Set MYSQL_APP_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks: [fintrack]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  user-service:
+    build:
+      context: .
+      dockerfile: backend/user-service/Dockerfile
+    environment: &service-env
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-expense_tracker}
+      DB_USER: ${MYSQL_APP_USER:?Set MYSQL_APP_USER in .env}
+      DB_PASSWORD: ${MYSQL_APP_PASSWORD:?Set MYSQL_APP_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [fintrack]
+
+  expense-service:
+    build: {context: ., dockerfile: backend/expense-service/Dockerfile}
+    environment:
+      <<: *service-env
+      BUDGET_SERVICE_URL: http://budget-service:8004
+      DOWNSTREAM_TIMEOUT_SECONDS: 2
+    depends_on:
+      mysql: {condition: service_healthy}
+      budget-service: {condition: service_healthy}
+    networks: [fintrack]
+
+  category-service:
+    build: {context: ., dockerfile: backend/category-service/Dockerfile}
+    environment: *service-env
+    depends_on: {mysql: {condition: service_healthy}}
+    networks: [fintrack]
+
+  budget-service:
+    build: {context: ., dockerfile: backend/budget-service/Dockerfile}
+    environment:
+      <<: *service-env
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+      DOWNSTREAM_TIMEOUT_SECONDS: 2
+    depends_on:
+      mysql: {condition: service_healthy}
+      notification-service: {condition: service_healthy}
+    networks: [fintrack]
+
+  report-service:
+    build: {context: ., dockerfile: backend/report-service/Dockerfile}
+    environment: *service-env
+    depends_on: {mysql: {condition: service_healthy}}
+    networks: [fintrack]
+
+  notification-service:
+    build: {context: ., dockerfile: backend/notification-service/Dockerfile}
+    environment: *service-env
+    depends_on: {mysql: {condition: service_healthy}}
+    networks: [fintrack]
+
+  api-gateway:
+    build: {context: ., dockerfile: backend/api-gateway/Dockerfile}
+    environment:
+      USER_SERVICE_URL: http://user-service:8001
+      EXPENSE_SERVICE_URL: http://expense-service:8002
+      CATEGORY_SERVICE_URL: http://category-service:8003
+      BUDGET_SERVICE_URL: http://budget-service:8004
+      REPORT_SERVICE_URL: http://report-service:8005
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+      GATEWAY_TIMEOUT_SECONDS: 10
+    depends_on:
+      user-service: {condition: service_healthy}
+      expense-service: {condition: service_healthy}
+      category-service: {condition: service_healthy}
+      budget-service: {condition: service_healthy}
+      report-service: {condition: service_healthy}
+      notification-service: {condition: service_healthy}
+    ports: ["8000:8000"]
+    networks: [fintrack]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/expense-ui/Dockerfile
+    depends_on:
+      api-gateway: {condition: service_healthy}
+    ports: ["5173:80"]
+    networks: [fintrack]
+
+volumes:
+  mysql-data:
+
+networks:
+  fintrack:
+    driver: bridge

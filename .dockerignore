@@ -1,0 +1,14 @@
+.env
+backend/*/.env
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+test-results/
+playwright-report/
+.git/
+.gitignore
+README.md
+CHANGES.md

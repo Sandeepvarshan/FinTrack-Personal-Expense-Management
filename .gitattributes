@@ -1,0 +1,5 @@
+# Store text files with LF in the repository, whatever OS you edit on.
+# (Windows CRLF line endings break shell scripts and Docker env files on Linux.)
+* text=auto eol=lf
+*.png binary
+*.zip binary
