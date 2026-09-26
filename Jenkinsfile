@@ -66,22 +66,36 @@ pipeline {
                 }
             }
         }
-        stage('Trivy Security Scan') {
-            steps {
-                powershell '''
+       stage('Trivy Security Scan') {
+    steps {
+        withCredentials([
+            string(credentialsId: 'fintrack-jwt-secret', variable: 'JWT_SECRET'),
+            usernamePassword(
+                credentialsId: 'fintrack-mysql-app',
+                usernameVariable: 'MYSQL_APP_USER',
+                passwordVariable: 'MYSQL_APP_PASSWORD'
+            ),
+            string(
+                credentialsId: 'fintrack-mysql-root-password',
+                variable: 'MYSQL_ROOT_PASSWORD'
+            )
+        ]) {
+            powershell '''
                 $images = docker compose config --images
+
                 foreach ($image in $images) {
-                Write-Host "======================================"
-                Write-Host "Scanning image: $image"
-                Write-Host "======================================"
+                    Write-Host "======================================"
+                    Write-Host "Scanning image: $image"
+                    Write-Host "======================================"
 
-                docker run --rm aquasec/trivy:latest image $image
+                    docker run --rm aquasec/trivy:latest image $image
 
-                if ($LASTEXITCODE -ne 0) {
-                    exit $LASTEXITCODE
+                    if ($LASTEXITCODE -ne 0) {
+                        exit $LASTEXITCODE
+                    }
                 }
-            }
-        '''
+            '''
+        }
     }
 }
         stage('Docker Compose Deployment') {
