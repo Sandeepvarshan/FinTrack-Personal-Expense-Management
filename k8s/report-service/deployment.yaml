@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-service
+  namespace: fintrack
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: report-service}}
+  template:
+    metadata: {labels: {app: report-service}}
+    spec:
+      containers:
+        - name: report-service
+          image: fintrack/report-service:minikube
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8005}]
+          env:
+            - {name: DB_HOST, value: mysql}
+            - {name: DB_PORT, value: "3306"}
+            - {name: DB_NAME, value: expense_tracker}
+            - name: DB_USER
+              valueFrom: {secretKeyRef: {name: mysql-credentials, key: app-user}}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: mysql-credentials, key: app-password}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: mysql-credentials, key: jwt-secret}}
+          readinessProbe: {httpGet: {path: /health, port: 8005}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: 8005}, initialDelaySeconds: 20, periodSeconds: 20}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 300m, memory: 256Mi}}

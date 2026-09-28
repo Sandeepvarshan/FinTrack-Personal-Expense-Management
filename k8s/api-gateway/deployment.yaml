@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: fintrack
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api-gateway}}
+  template:
+    metadata: {labels: {app: api-gateway}}
+    spec:
+      containers:
+        - name: api-gateway
+          image: fintrack/api-gateway:minikube
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8000}]
+          env:
+            - {name: USER_SERVICE_URL, value: http://user-service:8001}
+            - {name: EXPENSE_SERVICE_URL, value: http://expense-service:8002}
+            - {name: CATEGORY_SERVICE_URL, value: http://category-service:8003}
+            - {name: BUDGET_SERVICE_URL, value: http://budget-service:8004}
+            - {name: REPORT_SERVICE_URL, value: http://report-service:8005}
+            - {name: NOTIFICATION_SERVICE_URL, value: http://notification-service:8006}
+            - {name: GATEWAY_TIMEOUT_SECONDS, value: "10"}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 20, periodSeconds: 20}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 300m, memory: 256Mi}}

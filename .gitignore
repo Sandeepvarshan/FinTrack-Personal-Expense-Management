@@ -25,6 +25,9 @@ playwright-report/
 .vscode/
 .idea/
 
+# Local Kubernetes secret values
+k8s/mysql/secret.local.yaml
+
 # Logs / OS noise
 *.log
 .DS_Store
