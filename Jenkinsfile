@@ -48,13 +48,11 @@ pipeline {
                         credentialsId: 'fintrack-jwt-secret',
                         variable: 'JWT_SECRET'
                     ),
-
                     usernamePassword(
                         credentialsId: 'fintrack-mysql-app',
                         usernameVariable: 'MYSQL_APP_USER',
                         passwordVariable: 'MYSQL_APP_PASSWORD'
                     ),
-
                     string(
                         credentialsId: 'fintrack-mysql-root-password',
                         variable: 'MYSQL_ROOT_PASSWORD'
@@ -74,19 +72,19 @@ pipeline {
                         credentialsId: 'fintrack-jwt-secret',
                         variable: 'JWT_SECRET'
                     ),
-
                     usernamePassword(
                         credentialsId: 'fintrack-mysql-app',
                         usernameVariable: 'MYSQL_APP_USER',
                         passwordVariable: 'MYSQL_APP_PASSWORD'
                     ),
-
                     string(
                         credentialsId: 'fintrack-mysql-root-password',
                         variable: 'MYSQL_ROOT_PASSWORD'
                     )
                 ]) {
                     powershell '''
+                        $ErrorActionPreference = "Stop"
+
                         $images = docker compose config --images
 
                         foreach ($image in $images) {
@@ -98,11 +96,30 @@ pipeline {
                             trivy image $image
 
                             if ($LASTEXITCODE -ne 0) {
-                                exit $LASTEXITCODE
+                                throw "Trivy scan failed for image: $image"
                             }
                         }
+
+                        Write-Host "All Docker images passed the Trivy scan execution."
                     '''
                 }
+            }
+        }
+
+        stage('Refresh Minikube Context') {
+            steps {
+                bat '''
+                    minikube update-context -p minikube
+                    kubectl config current-context
+                '''
+            }
+        }
+
+        stage('Verify Kubernetes Access') {
+            steps {
+                bat '''
+                    kubectl get nodes
+                '''
             }
         }
 
@@ -188,6 +205,10 @@ pipeline {
 
                     $response = kubectl exec deployment/api-gateway -n fintrack -- python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Failed to execute API Gateway health check."
+                    }
+
                     Write-Host "Health Response:"
                     Write-Host $response
 
@@ -199,7 +220,9 @@ pipeline {
 
                     $unhealthy = @(
                         $health.services.PSObject.Properties |
-                        Where-Object { $_.Value -ne "ok" }
+                        Where-Object {
+                            $_.Value -ne "ok"
+                        }
                     )
 
                     if ($unhealthy.Count -gt 0) {
@@ -219,7 +242,7 @@ pipeline {
 
                     Write-Host "Starting Kubernetes frontend port-forward..."
 
-                    $process = Start-Process `
+                    $portForwardProcess = Start-Process `
                         -FilePath "kubectl.exe" `
                         -ArgumentList "port-forward -n fintrack service/frontend 5173:80" `
                         -PassThru `
@@ -227,13 +250,15 @@ pipeline {
 
                     Start-Sleep -Seconds 8
 
-                    if ($process.HasExited) {
+                    if ($portForwardProcess.HasExited) {
                         throw "Frontend port-forward process exited unexpectedly."
                     }
 
                     Write-Host "Frontend available at http://localhost:5173"
 
-                    Set-Content -Path "frontend-port-forward.pid" -Value $process.Id
+                    Set-Content `
+                        -Path "frontend-port-forward.pid" `
+                        -Value $portForwardProcess.Id
                 '''
             }
         }
@@ -255,17 +280,29 @@ pipeline {
             powershell '''
                 if (Test-Path "frontend-port-forward.pid") {
 
-                    $pid = Get-Content "frontend-port-forward.pid"
+                    $portForwardPid = Get-Content "frontend-port-forward.pid"
 
-                    Write-Host "Stopping Kubernetes frontend port-forward..."
+                    if ($portForwardPid) {
 
-                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                        Write-Host "Stopping Kubernetes frontend port-forward..."
 
-                    Remove-Item "frontend-port-forward.pid" -Force -ErrorAction SilentlyContinue
+                        Stop-Process `
+                            -Id ([int]$portForwardPid) `
+                            -Force `
+                            -ErrorAction SilentlyContinue
+                    }
+
+                    Remove-Item `
+                        "frontend-port-forward.pid" `
+                        -Force `
+                        -ErrorAction SilentlyContinue
                 }
 
                 Write-Host ""
-                Write-Host "Final Kubernetes state:"
+                Write-Host "======================================"
+                Write-Host "Final Kubernetes State"
+                Write-Host "======================================"
+
                 kubectl get pods -n fintrack
                 kubectl get services -n fintrack
             '''
